@@ -1,0 +1,1544 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>心晴空间 (MindSpace) - 情感共鸣交互系统</title>
+  <!-- 引入 Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Supabase SDK -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <!-- Supabase 公开配置 -->
+  <script src="config.js"></script>
+  <!-- 系统提示词 -->
+  <script src="prompts.js"></script>
+  <script src="export-card.js"></script>
+  <style>
+    /* 自定义动画与过渡增强 */
+    @keyframes bounce-horizontal {
+      0%, 100% { transform: translateX(0); }
+      50% { transform: translateX(4px); }
+    }
+    .animate-bounce-horizontal {
+      animation: bounce-horizontal 1s infinite;
+    }
+    /* 自定义滚动条样式，使其精致优雅 */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #f1f5f9;
+      border-radius: 8px;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 8px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #94a3b8;
+    }
+  </style>
+</head>
+<body class="h-screen bg-slate-50 text-slate-800 flex flex-col font-sans antialiased overflow-hidden selection:bg-rose-100 selection:text-rose-900">
+
+  <!-- ==================== 登录/注册认证弹窗 ==================== -->
+  <div id="auth-overlay" class="fixed inset-0 z-50 bg-white flex items-center justify-center">
+    <div class="w-full max-w-sm px-6">
+      <div class="text-center mb-8">
+        <span class="text-5xl">🌱</span>
+        <h1 class="text-2xl font-bold mt-4 bg-gradient-to-r from-rose-500 to-indigo-600 bg-clip-text text-transparent">心芽小栈</h1>
+        <p class="text-sm text-slate-500 mt-2">温暖的心灵陪伴空间</p>
+      </div>
+
+      <!-- 登录/注册切换标签 -->
+      <div class="flex bg-slate-100 rounded-xl p-1 mb-6">
+        <button id="auth-tab-login" class="flex-1 py-2 text-sm font-medium rounded-lg bg-white shadow-sm text-slate-800 transition">登录</button>
+        <button id="auth-tab-signup" class="flex-1 py-2 text-sm font-medium rounded-lg text-slate-500 transition">注册</button>
+      </div>
+
+      <!-- 登录表单 -->
+      <form id="auth-form-login" onsubmit="handleSignIn(event)" class="space-y-4">
+        <div>
+          <label class="text-xs font-semibold text-slate-600 block mb-1.5">邮箱</label>
+          <input id="login-email" type="email" placeholder="your@email.com" required
+            class="w-full text-sm bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 outline-none focus:border-rose-400 focus:ring-2 focus:ring-rose-100 transition">
+        </div>
+        <div>
+          <label class="text-xs font-semibold text-slate-600 block mb-1.5">密码</label>
+          <input id="login-password" type="password" placeholder="输入密码" required
+            class="w-full text-sm bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 outline-none focus:border-rose-400 focus:ring-2 focus:ring-rose-100 transition">
+        </div>
+        <p id="auth-error" class="text-xs text-red-500 hidden"></p>
+        <button type="submit"
+          class="w-full bg-rose-500 hover:bg-rose-600 text-white font-medium text-sm py-3 rounded-xl shadow-md shadow-rose-100 transition">
+          登录
+        </button>
+      </form>
+
+      <!-- 注册表单（默认隐藏） -->
+      <form id="auth-form-signup" onsubmit="handleSignUp(event)" class="space-y-4 hidden">
+        <div>
+          <label class="text-xs font-semibold text-slate-600 block mb-1.5">邮箱</label>
+          <input id="signup-email" type="email" placeholder="your@email.com" required
+            class="w-full text-sm bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition">
+        </div>
+        <div>
+          <label class="text-xs font-semibold text-slate-600 block mb-1.5">密码</label>
+          <input id="signup-password" type="password" placeholder="至少6位密码" required minlength="6"
+            class="w-full text-sm bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition">
+        </div>
+        <p id="auth-error-signup" class="text-xs text-red-500 hidden"></p>
+        <button type="submit"
+          class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium text-sm py-3 rounded-xl shadow-md shadow-indigo-100 transition">
+          注册
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ==================== 主应用内容（登录后可见） ==================== -->
+  <div id="app-content" class="hidden flex-1 flex flex-col overflow-hidden">
+
+  <!-- ==================== 底部悬浮 Toast 消息提示 ==================== -->
+  <div id="toast" class="fixed bottom-6 right-6 z-50 transform translate-y-10 opacity-0 pointer-events-none transition-all duration-300">
+    <div id="toast-content" class="rounded-xl px-4 py-3 shadow-lg flex items-center gap-2 text-white text-sm font-semibold border bg-slate-900 border-slate-800">
+      <span id="toast-icon">✨</span>
+      <span id="toast-text">提示消息</span>
+    </div>
+  </div>
+
+  <!-- ==================== 顶部导航栏 ==================== -->
+  <header class="bg-white border-b border-slate-100 h-16 px-6 flex items-center justify-between z-30 shadow-sm shrink-0">
+    <div class="flex items-center gap-3">
+      <!-- 侧边栏开关触发按钮 -->
+      <button 
+        id="sidebar-toggle"
+        class="p-2 hover:bg-slate-100 rounded-lg text-slate-600 transition-colors focus:outline-none focus:ring-2 focus:ring-rose-200"
+        title="折叠/展开功能菜单"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h10M4 18h16" />
+        </svg>
+      </button>
+      
+      <div class="flex items-center gap-2">
+        <span class="text-2xl">🌱</span>
+        <h1 class="font-bold text-lg bg-gradient-to-r from-rose-500 to-indigo-600 bg-clip-text text-transparent">
+          心芽小栈 </span>
+        </h1>
+      </div>
+    </div>
+
+    <!-- 顶部右侧系统信息 -->
+    <div class="flex items-center gap-4">
+      <div class="hidden md:flex items-center gap-2 text-xs text-slate-500 bg-slate-100 px-3 py-1.5 rounded-full">
+        <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+        <span>心灵向导 AI 核心就绪</span>
+      </div>
+      <div class="text-sm font-medium text-slate-600">
+        今天也是美好的一天 ✨
+      </div>
+      <button
+        onclick="handleSignOut()"
+        class="text-xs text-slate-400 hover:text-rose-500 bg-slate-100 hover:bg-rose-50 px-3 py-1.5 rounded-lg transition"
+        title="退出登录"
+      >
+        退出
+      </button>
+    </div>
+  </header>
+
+  <!-- ==================== 主内容区域 ==================== -->
+  <div class="flex-1 flex relative overflow-hidden">
+    
+    <!-- ==================== 左侧功能导航栏 (支持推拉折叠) ==================== -->
+    <aside 
+      id="sidebar"
+      class="bg-white border-r border-slate-100 flex flex-col h-full z-20 absolute lg:relative transition-all duration-300 ease-in-out w-72 translate-x-0"
+    >
+      <!-- 功能标题区 -->
+      <div class="p-4 border-b border-slate-50 flex items-center justify-between shrink-0 overflow-hidden">
+        <span id="sidebar-title-text" class="font-bold text-slate-400 text-xs tracking-wider uppercase whitespace-nowrap transition-opacity duration-200">
+          功能模块导航
+        </span>
+        <span class="text-xs text-rose-500 bg-rose-50 px-2 py-0.5 rounded shrink-0">可推拉隐藏 ⇄</span>
+      </div>
+
+      <!-- 导航按钮列表 -->
+      <nav class="flex-1 p-3 space-y-2 overflow-y-auto">
+        <!-- 按钮 1：和 AI 对话 -->
+        <button
+          id="btn-tab-ai"
+          onclick="switchTab('ai-chat')"
+          class="w-full flex items-center gap-3 p-3.5 rounded-xl transition-all duration-200 group text-left bg-rose-500 text-white font-medium shadow-md shadow-rose-200"
+        >
+          <div class="p-1.5 rounded-lg shrink-0 transition-colors bg-rose-400/30">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+            </svg>
+          </div>
+          <span class="tab-label text-sm whitespace-nowrap transition-opacity duration-200">
+            和 AI 对话
+          </span>
+        </button>
+
+        <!-- 按钮 2：记录幸福小事 -->
+        <button
+          id="btn-tab-moments"
+          onclick="switchTab('happy-moments')"
+          class="w-full flex items-center gap-3 p-3.5 rounded-xl transition-all duration-200 group text-left text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+        >
+          <div class="p-1.5 rounded-lg shrink-0 transition-colors bg-amber-50 text-amber-500 group-hover:bg-amber-100">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+            </svg>
+          </div>
+          <span class="tab-label text-sm whitespace-nowrap transition-opacity duration-200">
+            记录幸福小事
+          </span>
+        </button>
+
+        <!-- 按钮 3：视角转换器 -->
+        <button
+          id="btn-tab-converter"
+          onclick="switchTab('perspective-converter')"
+          class="w-full flex items-center gap-3 p-3.5 rounded-xl transition-all duration-200 group text-left text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+        >
+          <div class="p-1.5 rounded-lg shrink-0 transition-colors bg-indigo-50 text-indigo-500 group-hover:bg-indigo-100">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 8H17m0 0a5 5 0 100 10h1.7" />
+            </svg>
+          </div>
+          <span class="tab-label text-sm whitespace-nowrap transition-opacity duration-200">
+            视角转换器
+          </span>
+        </button>
+      </nav>
+
+      <!-- 底部小卡片 -->
+      <div class="p-4 border-t border-slate-50 shrink-0 text-center overflow-hidden">
+        <div id="sidebar-footer-card" class="bg-slate-50 rounded-xl p-3 text-xs text-slate-500 space-y-1">
+          <div>😊 今日小语</div>
+          <div id="sidebar-quote-text" class="italic text-slate-600">"境由心造，境随心转"</div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- 侧边栏折叠后：浮动的微型复原按钮 -->
+    <button 
+      id="sidebar-expand-float"
+      onclick="toggleSidebar(true)"
+      class="hidden absolute left-4 top-1/2 -translate-y-1/2 z-30 bg-white border border-slate-200 shadow-md rounded-full p-2 hover:bg-slate-50 hover:text-rose-500 transition-all text-slate-400 group animate-bounce-horizontal"
+      title="展开侧边菜单"
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 5l7 7-7 7M5 5l7 7-7 7" />
+      </svg>
+    </button>
+
+    <!-- 移动端侧边栏遮罩层 -->
+    <div 
+      id="sidebar-overlay"
+      onclick="toggleSidebar(false)"
+      class="hidden fixed inset-0 bg-slate-900/40 z-10 lg:hidden"
+    ></div>
+
+    <!-- ==================== 右侧视图区 ==================== -->
+    <main class="flex-1 flex flex-col overflow-hidden bg-slate-50 relative z-0">
+      
+      <!-- ==================== TAB 1：和 AI 对话 ==================== -->
+      <section id="tab-ai-chat" class="flex-1 flex flex-col bg-white md:m-4 md:rounded-2xl md:shadow-sm overflow-hidden border border-slate-100">
+        <!-- 对话头 -->
+        <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-rose-50/50 to-transparent">
+          <div>
+            <h2 class="font-bold text-slate-800 text-base">💬 心灵向导 AI 专属对话室</h2>
+            <p class="text-xs text-slate-500">倾诉所有欢喜、疲惫与烦恼，我一直在倾听</p>
+          </div>
+          <div class="flex gap-2">
+            <span class="text-xs bg-rose-50 text-rose-600 px-2.5 py-1 rounded-full border border-rose-100">温暖共情</span>
+            <span class="text-xs bg-indigo-50 text-indigo-600 px-2.5 py-1 rounded-full border border-indigo-100">认知启发</span>
+          </div>
+        </div>
+
+        <!-- 聊天信息渲染流 -->
+        <div id="chat-flow-container" class="flex-1 overflow-y-auto p-6 space-y-4">
+          <!-- 动态JavaScript渲染 -->
+        </div>
+
+        <!-- 快捷输入推荐面板 -->
+        <div class="px-6 py-2 bg-slate-50 border-t border-slate-100 flex items-center gap-2 overflow-x-auto whitespace-nowrap">
+          <span class="text-xs text-slate-400 font-medium shrink-0">快捷话题：</span>
+          <button 
+            onclick="sendPresetMessage('我今天遇到了一件特别开心的事！')" 
+            class="text-xs bg-white text-amber-600 hover:text-amber-700 hover:bg-amber-50 px-3 py-1.5 rounded-full border border-amber-100 transition shadow-sm"
+          >
+            🎉 分享今日大喜事
+          </button>
+          <button 
+            onclick="sendPresetMessage('今天工作有点累，心里乱糟糟的...')" 
+            class="text-xs bg-white text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 px-3 py-1.5 rounded-full border border-indigo-100 transition shadow-sm"
+          >
+            🌧️ 倾诉工作烦心事
+          </button>
+          <button 
+            onclick="sendPresetMessage('怎么能减少日常琐事的精神内耗？')" 
+            class="text-xs bg-white text-slate-600 hover:text-slate-700 hover:bg-slate-100 px-3 py-1.5 rounded-full border border-slate-200 transition shadow-sm"
+          >
+            🧠 寻求减少内耗指南
+          </button>
+        </div>
+
+        <!-- 对话输入区 -->
+        <div class="p-4 border-t border-slate-100 bg-white">
+          <div class="flex gap-2 items-center bg-slate-50 border border-slate-200 rounded-2xl p-2 focus-within:border-rose-300 focus-within:ring-2 focus-within:ring-rose-100 transition-all">
+            <input
+              id="chat-input"
+              type="text"
+              placeholder="输入您想对 AI 说的话（按回车发送）..."
+              class="flex-1 bg-transparent border-none outline-none px-3 py-2 text-sm text-slate-800 placeholder-slate-400"
+            />
+            <button
+              id="chat-send-btn"
+              onclick="handleSendChatMessage()"
+              class="bg-slate-200 text-slate-400 p-2.5 rounded-xl transition-all flex items-center justify-center shrink-0 cursor-not-allowed"
+              disabled
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ==================== TAB 2：记录幸福小事 ==================== -->
+      <section id="tab-happy-moments" class="hidden flex-1 overflow-y-auto p-4 md:p-6 space-y-6">
+        <!-- 统计面板 -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div class="bg-gradient-to-br from-amber-400 to-amber-500 rounded-2xl p-5 text-white shadow-sm flex flex-col justify-between">
+            <div>
+              <h3 class="text-sm font-semibold opacity-90">今日幸福宣言</h3>
+              <p id="daily-quote-text" class="text-lg font-bold mt-2 leading-snug">"幸福不是拥有得多，而是能敏锐地发现身边的温润之光。"</p>
+            </div>
+            <span class="text-xs opacity-75 mt-4">🌸 每日正念打卡</span>
+          </div>
+          
+          <div class="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm flex items-center justify-between">
+            <div class="space-y-1">
+              <span class="text-xs text-slate-400 block">累计录入幸福</span>
+              <span id="stat-count" class="text-3xl font-extrabold text-amber-500">0</span>
+              <span class="text-xs text-slate-500 block">持续累积正向能量</span>
+            </div>
+            <div class="w-12 h-12 rounded-full bg-amber-50 flex items-center justify-center text-2xl">📚</div>
+          </div>
+
+          <div class="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm flex items-center justify-between">
+            <div class="space-y-1">
+              <span class="text-xs text-slate-400 block">平均幸福指数</span>
+              <div class="flex items-baseline gap-1">
+                <span id="stat-stars" class="text-3xl font-extrabold text-indigo-600">0.0</span>
+                <span class="text-xs text-indigo-400">/ 5.0</span>
+              </div>
+              <span class="text-xs text-slate-500 block">主导心情: <span id="stat-mood" class="font-semibold text-slate-700">🥰 满足</span></span>
+            </div>
+            <div class="w-12 h-12 rounded-full bg-indigo-50 flex items-center justify-center text-2xl">✨</div>
+          </div>
+        </div>
+
+        <!-- 录入与历史双栏 -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+          <!-- 左侧录入卡 -->
+          <form id="moment-form" onsubmit="handleFormSubmit(event)" class="lg:col-span-5 bg-white rounded-2xl border border-slate-100 p-5 space-y-4 shadow-sm lg:sticky lg:top-4">
+            <div class="border-b border-slate-50 pb-3">
+              <h3 class="font-bold text-slate-800 text-sm flex items-center gap-2">
+                <span class="text-amber-500 text-base">✍️</span> 新增一件小确幸
+              </h3>
+              <p class="text-xs text-slate-400">随时记下温暖的日常碎片，让美好定格</p>
+            </div>
+
+            <!-- 输入 -->
+            <div class="space-y-1.5">
+              <label class="text-xs font-semibold text-slate-600 block">发生了什么好事？</label>
+              <textarea
+                id="moment-text"
+                rows="4"
+                placeholder="比如：吃到了一家超赞的街角面馆、迎风晒太阳、看到了一朵奇形怪状的云..."
+                class="w-full text-sm bg-slate-50 border border-slate-200 rounded-xl p-3 outline-none focus:bg-white focus:border-amber-400 focus:ring-2 focus:ring-amber-100 transition-all resize-none"
+              ></textarea>
+            </div>
+
+            <!-- 心情 Emoji 选择 -->
+            <div class="space-y-1.5">
+              <label class="text-xs font-semibold text-slate-600 block">此刻的心情情绪</label>
+              <div class="grid grid-cols-5 gap-1.5" id="mood-selector-container">
+                <!-- 由 JS 渲染 -->
+              </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-4">
+              <!-- 分类 -->
+              <div class="space-y-1.5">
+                <label class="text-xs font-semibold text-slate-600 block">生活分类</label>
+                <select
+                  id="moment-category"
+                  class="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl p-2.5 outline-none focus:bg-white focus:border-amber-400 transition"
+                >
+                  <option value="🎨 生活美学">🎨 生活美学</option>
+                  <option value="💻 个人成长">💻 个人成长</option>
+                  <option value="🐾 萌宠治愈">🐾 萌宠治愈</option>
+                  <option value="🌿 亲近自然">🌿 亲近自然</option>
+                  <option value="🍔 美食之乐">🍔 美食之乐</option>
+                  <option value="🏆 工作学业">🏆 工作学业</option>
+                </select>
+              </div>
+
+              <!-- 星星评级 -->
+              <div class="space-y-1.5">
+                <label class="text-xs font-semibold text-slate-600 block">幸福指数评级</label>
+                <div class="flex items-center gap-1 h-9" id="star-selector-container">
+                  <!-- 动态 JS 填充 -->
+                </div>
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              class="w-full bg-amber-500 hover:bg-amber-600 text-white font-medium text-sm py-3 rounded-xl shadow-md shadow-amber-100 hover:shadow-lg transition-all flex items-center justify-center gap-2"
+            >
+              <span>保存该幸福瞬间 🌸</span>
+            </button>
+          </form>
+
+          <!-- 右侧历史河流 -->
+          <div class="lg:col-span-7 space-y-4">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between px-2 gap-2">
+              <span class="text-xs font-bold text-slate-400 uppercase tracking-wider">历史幸福时光流轴</span>
+              <div class="flex flex-wrap items-center gap-2">
+                <button
+                  onclick="exportHappinessCard()"
+                  class="text-xs bg-gradient-to-r from-rose-500 to-amber-500 hover:from-rose-600 hover:to-amber-600 text-white px-2.5 py-1.5 rounded-lg transition-all shadow-md flex items-center gap-1 font-semibold"
+                  title="生成一张精美的幸福卡片图片"
+                >
+                  🎨 导出幸福卡片 (PNG)
+                </button>
+                <button
+                  onclick="exportAllHappinessCards()"
+                  class="text-xs bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-600 hover:to-purple-600 text-white px-2.5 py-1.5 rounded-lg transition-all shadow-md flex items-center gap-1 font-semibold"
+                  title="将所有幸福小事导出为一张长卷图片"
+                >
+                  📚 批量导出长卷 (PNG)
+                </button>
+                <button
+                  onclick="exportMomentsText()"
+                  class="text-xs bg-amber-500 hover:bg-amber-600 text-white px-2.5 py-1.5 rounded-lg transition-all shadow-sm flex items-center gap-1 font-medium"
+                  title="将幸福瞬间导出为精美的可读日记"
+                >
+                  📥 导出文字手账
+                </button>
+                <button
+                  onclick="exportMomentsJson()"
+                  class="text-xs bg-slate-200 hover:bg-slate-300 text-slate-700 px-2.5 py-1.5 rounded-lg transition-all shadow-sm flex items-center gap-1 font-medium"
+                  title="导出原始JSON数据，方便以后导入恢复"
+                >
+                  💾 备份数据 (JSON)
+                </button>
+              </div>
+            </div>
+            <div id="moments-list" class="space-y-3.5">
+              <!-- 动态数据列表 -->
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ==================== TAB 3：视角转换器 (积极心理学重构) ==================== -->
+      <section id="tab-perspective-converter" class="hidden flex-1 overflow-y-auto p-4 md:p-6 space-y-6">
+        <!-- 导言卡 -->
+        <div class="bg-white rounded-2xl border border-slate-100 p-6 shadow-sm flex flex-col md:flex-row items-center justify-between gap-6">
+          <div class="space-y-3 text-center md:text-left">
+            <div class="flex items-center gap-2 justify-center md:justify-start">
+              <span class="text-xs bg-indigo-100 text-indigo-700 font-bold px-2.5 py-1 rounded-full uppercase tracking-wider">积极心理学认知重构</span>
+              <span class="text-xs bg-rose-100 text-rose-700 font-bold px-2.5 py-1 rounded-full uppercase tracking-wider">黄金法则 ✨</span>
+            </div>
+            <h2 class="font-extrabold text-slate-800 text-xl flex items-center gap-2 justify-center md:justify-start">
+              <span>🔮</span> 心灵认知视角重构镜
+            </h2>
+            <p class="text-sm text-slate-600 leading-relaxed max-w-2xl font-medium italic">
+              "用宏大的世界稀释痛苦，以微小的事物感知幸福。"
+            </p>
+            <p class="text-xs text-slate-500 leading-relaxed max-w-xl">
+              积极心理学指出，我们经历的并非事实本身，而是对事实的解释。写下让你沮丧内耗或平淡枯燥的琐事，心灵向导会将痛苦置于宇宙尺度中稀释，引导你从微小的原点感知暖意。
+            </p>
+          </div>
+          <div class="flex items-center gap-3 shrink-0">
+            <div class="w-12 h-12 rounded-full bg-indigo-50 flex items-center justify-center text-3xl animate-spin-slow">🌀</div>
+            <div class="w-12 h-12 rounded-full bg-rose-50 flex items-center justify-center text-3xl animate-bounce">✨</div>
+          </div>
+        </div>
+
+        <!-- 主面板 -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
+          <!-- 烦恼/琐事事件输入 -->
+          <div class="lg:col-span-5 bg-white rounded-2xl border border-slate-100 p-5 flex flex-col justify-between shadow-sm">
+            <div class="space-y-4">
+              <div class="border-b border-slate-50 pb-3">
+                <h3 class="font-bold text-slate-800 text-sm flex items-center gap-1.5">
+                  <span class="text-indigo-600 text-base">😔</span> 烦恼事或平淡琐碎的日常
+                </h3>
+                <p class="text-xs text-slate-400">写下你当下的内耗、烦闷、失误或觉得一成不变的平淡生活</p>
+              </div>
+
+              <textarea
+                id="reframer-input"
+                rows="7"
+                placeholder="比如：今天又要写一大堆作业和报告，感觉好累，每天都在重复同样的事，毫无新意..."
+                class="w-full text-sm bg-slate-50 border border-slate-200 rounded-xl p-3.5 outline-none focus:bg-white focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition-all resize-none"
+              ></textarea>
+
+              <div class="space-y-2">
+                <span class="text-xs text-slate-400 font-semibold block">试试这些经典日常/烦恼：</span>
+                <div class="flex flex-wrap gap-2">
+                  <button 
+                    onclick="applyReframerDemo('每天除了看书、写作业、考试，感觉日子过得好平淡、好无聊。')"
+                    class="text-[11px] bg-slate-100 text-slate-600 hover:bg-slate-200 px-2.5 py-1.5 rounded-lg transition"
+                  >
+                    📚 觉得日常平淡枯燥
+                  </button>
+                  <button 
+                    onclick="applyReframerDemo('今天下大暴雨，鞋全打湿了，心情糟糕透了。')"
+                    class="text-[11px] bg-slate-100 text-slate-600 hover:bg-slate-200 px-2.5 py-1.5 rounded-lg transition"
+                  >
+                    🌧️ 遇上下雨鞋被打湿
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div class="pt-6">
+              <button
+                id="btn-trigger-reframe"
+                onclick="handleReframe()"
+                class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm py-3.5 rounded-xl transition-all flex items-center justify-center gap-2 shadow-md shadow-indigo-100 hover:shadow-lg"
+              >
+                <span>🔮 释放正念，一键重构！</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- 心理学对话重构结果 (右/占7格) -->
+          <div class="lg:col-span-7 bg-slate-900 text-white rounded-2xl p-6 flex flex-col justify-between shadow-sm relative overflow-hidden">
+            <div class="absolute top-0 right-0 w-48 h-48 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none"></div>
+            
+            <div class="space-y-5 z-10 w-full flex-1 flex flex-col">
+              <div class="border-b border-slate-800 pb-3 flex justify-between items-center shrink-0">
+                <div>
+                  <h3 class="font-bold text-white text-sm flex items-center gap-1.5">
+                    <span>🌈</span> 积极心理学心灵引导
+                  </h3>
+                  <p class="text-[11px] text-slate-400">用宏大世界稀释痛苦，以微小事物感知幸福</p>
+                </div>
+              </div>
+
+              <!-- 重构新视角输出 (高度自适应的对话流式容器) -->
+              <div class="flex-1 flex flex-col justify-center my-2">
+                <div id="reframer-output-panel" class="w-full flex flex-col justify-center">
+                  <!-- JS 输出 -->
+                </div>
+              </div>
+            </div>
+
+            <!-- 一键同步到幸福小事按钮容器 -->
+            <div id="sync-button-container" class="pt-4 border-t border-slate-800 flex justify-between items-center z-10 hidden shrink-0">
+              <span class="text-[11px] text-slate-400 hidden sm:inline italic">🌱 认知重塑成果</span>
+              <button
+                onclick="syncReframingToHappyMoments()"
+                class="bg-emerald-500 hover:bg-emerald-600 text-white font-medium text-xs px-4 py-2.5 rounded-xl transition flex items-center gap-1.5 shadow-md shadow-emerald-950/20"
+              >
+                <span>📖 将此感悟同步存入【幸福小事清单】</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  </div><!-- #app-content -->
+
+  <!-- ==================== 核心逻辑：VANILLA JAVASCRIPT ==================== -->
+  <script>
+    // ==================== 1. 初始化数据 & 状态声明 ====================
+    let sb;
+    let currentUser = null;
+    let isAuthMode = 'login'; // 'login' | 'signup'
+
+    let activeTab = 'ai-chat';
+    let isSidebarOpen = true;
+
+    let moments = [];
+    let chatMessages = [
+      { id: 1, sender: 'ai', text: "你好呀，我是你的专属心灵AI助理。这里是你的静谧港湾，你可以对我倾诉任何心声。今天感觉怎么样？", time: "刚才" }
+    ];
+
+    const DAILY_QUOTES = [
+      "幸福不是拥有得多，而是能敏锐地发现身边的温润之光。✨",
+      "用宏大的世界稀释痛苦，以微小的事物感知幸福。🌌",
+      "生活中的每一朵小花、每一缕阳光，都是宇宙写给你的无字情书。🌸",
+      "不必等待外界照亮你，你本身就是最温暖的一道微光。☀️",
+      "正念就是全然地活在当下，接纳此时此刻最真实的自己。🦉",
+      "每一次小小的坚持，都是你在为自己心中憧憬的世界投票。🌱",
+      "原谅自己的不完美，正如我们允许夜空中有阴晴圆缺。🌙",
+      "去热爱每一个具体的日常，在平凡的沙砾中寻找闪光的温柔。💎",
+      "你此刻的呼吸，就是生命最温柔的证明。🍃",
+      "今天你已经很努力了，停下来抱抱自己吧。🤗"
+    ];
+
+    const DAILY_SIDEBAR_QUOTES = [
+      "境由心造，境随心转",
+      "万物皆有裂痕，那是光照进来的地方",
+      "心若向阳，无畏悲伤",
+      "慢慢来，比较快",
+      "当下即是最好的礼物",
+      "温柔地对待自己，是一生的修行",
+      "你比自己想象的更坚韧",
+      "山海自有归期，风雨自有相逢",
+      "允许一切如其所是",
+      "向内生长，向外绽放"
+    ];
+
+    function renderDailyQuote() {
+      const today = new Date();
+      const dateHash = today.getFullYear() * 10000 + (today.getMonth() + 1) * 100 + today.getDate();
+
+      const quoteEl = document.getElementById('daily-quote-text');
+      if (quoteEl) {
+        quoteEl.innerText = `“${DAILY_QUOTES[dateHash % DAILY_QUOTES.length]}”`;
+      }
+
+      const sidebarEl = document.getElementById('sidebar-quote-text');
+      if (sidebarEl) {
+        sidebarEl.innerText = `“${DAILY_SIDEBAR_QUOTES[dateHash % DAILY_SIDEBAR_QUOTES.length]}”`;
+      }
+    }
+
+    // ==================== 1.5 Supabase 初始化 & 认证 ====================
+
+    function initSupabase() {
+      try {
+        const cfg = window.APP_CONFIG || {};
+        const url = cfg.SUPABASE_URL || 'https://taiwltdisxbavfhohsfj.supabase.co';
+        const anonKey = cfg.SUPABASE_ANON_KEY || 'sb_publishable_ABgJnFPrADQmqWlXwCGF6Q_8mqyzybt';
+        if (!url || !anonKey) {
+          console.warn('Supabase not configured. Running without persistence.');
+          sb = null;
+          showAppContent();
+          return;
+        }
+        if (!window.supabase) {
+          console.warn('Supabase SDK not loaded. Running without persistence.');
+          sb = null;
+          showAppContent();
+          return;
+        }
+        sb = window.supabase.createClient(url, anonKey);
+        checkAuthAfterInit();
+      } catch (e) {
+        console.error('Supabase init error:', e);
+        sb = null;
+        showAppContent();
+      }
+    }
+
+    async function checkAuthAfterInit() {
+      if (!sb) {
+        showAppContent();
+        return;
+      }
+
+      try {
+        const { data: { session } } = await sb.auth.getSession();
+        if (session) {
+          currentUser = session.user;
+          await loadMoments();
+          showAppContent();
+        } else {
+          showAuthOverlay();
+        }
+
+        sb.auth.onAuthStateChange((event, session) => {
+          if (event === 'SIGNED_IN' && session) {
+            currentUser = session.user;
+            loadMoments().then(() => {
+              showAppContent();
+              renderChatFlow();
+            });
+          } else if (event === 'SIGNED_OUT') {
+            currentUser = null;
+            moments = [];
+            showAuthOverlay();
+          }
+        });
+      } catch (e) {
+        console.error('Auth check error:', e);
+        showAuthOverlay();
+      }
+    }
+
+    let _appInitialized = false;
+
+    function showAppContent() {
+      document.getElementById('auth-overlay').classList.add('hidden');
+      document.getElementById('app-content').classList.remove('hidden');
+      if (!_appInitialized) {
+        _appInitialized = true;
+        renderDailyQuote();
+        renderChatFlow();
+        if (window.innerWidth < 1024) {
+          toggleSidebar(false);
+        } else {
+          toggleSidebar(true);
+        }
+      }
+    }
+
+    function showAuthOverlay() {
+      document.getElementById('auth-overlay').classList.remove('hidden');
+      document.getElementById('app-content').classList.add('hidden');
+    }
+
+    // 认证UI切换事件绑定（脚本在 body 底部，DOM 已就绪，直接绑定）
+    (function bindAuthEvents() {
+      const tabLogin = document.getElementById('auth-tab-login');
+      const tabSignup = document.getElementById('auth-tab-signup');
+      if (tabLogin) tabLogin.addEventListener('click', () => switchAuthTab('login'));
+      if (tabSignup) tabSignup.addEventListener('click', () => switchAuthTab('signup'));
+    })();
+
+    function switchAuthTab(mode) {
+      isAuthMode = mode;
+      const tabLogin = document.getElementById('auth-tab-login');
+      const tabSignup = document.getElementById('auth-tab-signup');
+      const formLogin = document.getElementById('auth-form-login');
+      const formSignup = document.getElementById('auth-form-signup');
+      const errLogin = document.getElementById('auth-error');
+      const errSignup = document.getElementById('auth-error-signup');
+
+      if (mode === 'login') {
+        tabLogin.className = 'flex-1 py-2 text-sm font-medium rounded-lg bg-white shadow-sm text-slate-800 transition';
+        tabSignup.className = 'flex-1 py-2 text-sm font-medium rounded-lg text-slate-500 transition';
+        formLogin.classList.remove('hidden');
+        formSignup.classList.add('hidden');
+        errLogin.classList.add('hidden');
+      } else {
+        tabSignup.className = 'flex-1 py-2 text-sm font-medium rounded-lg bg-white shadow-sm text-slate-800 transition';
+        tabLogin.className = 'flex-1 py-2 text-sm font-medium rounded-lg text-slate-500 transition';
+        formSignup.classList.remove('hidden');
+        formLogin.classList.add('hidden');
+        errSignup.classList.add('hidden');
+      }
+    }
+
+    async function handleSignIn(e) {
+      e.preventDefault();
+      const email = document.getElementById('login-email').value;
+      const password = document.getElementById('login-password').value;
+      const errEl = document.getElementById('auth-error');
+
+      if (!sb) {
+        errEl.textContent = 'Supabase 未配置，请先在 .env 中设置 SUPABASE_URL 和 SUPABASE_ANON_KEY';
+        errEl.classList.remove('hidden');
+        return;
+      }
+
+      const { error } = await sb.auth.signInWithPassword({ email, password });
+      if (error) {
+        errEl.textContent = error.message;
+        errEl.classList.remove('hidden');
+      }
+    }
+
+    async function handleSignUp(e) {
+      e.preventDefault();
+      const email = document.getElementById('signup-email').value;
+      const password = document.getElementById('signup-password').value;
+      const errEl = document.getElementById('auth-error-signup');
+
+      if (!sb) {
+        errEl.textContent = 'Supabase 未配置，请先在 .env 中设置 SUPABASE_URL 和 SUPABASE_ANON_KEY';
+        errEl.classList.remove('hidden');
+        return;
+      }
+
+      const { error } = await sb.auth.signUp({ email, password });
+      if (error) {
+        errEl.textContent = error.message;
+        errEl.classList.remove('hidden');
+      } else {
+        showNotification('注册成功！请检查邮箱确认链接（如已关闭邮件确认则直接登录）', 'success');
+        switchAuthTab('login');
+      }
+    }
+
+    function handleSignOut() {
+      if (sb) sb.auth.signOut();
+    }
+
+
+    let reframerOutputText = '';
+
+    // 表单状态暂存
+    let currentMoodSelection = "🥰 满足";
+    let currentStarSelection = 5;
+
+    // ==================== 2. DOM 节点引用声明 ====================
+    const sidebar = document.getElementById('sidebar');
+    const sidebarOverlay = document.getElementById('sidebar-overlay');
+    const sidebarExpandFloat = document.getElementById('sidebar-expand-float');
+    const sidebarToggleBtn = document.getElementById('sidebar-toggle');
+    const sidebarTitleText = document.getElementById('sidebar-title-text');
+    const sidebarFooterCard = document.getElementById('sidebar-footer-card');
+
+    const chatFlowContainer = document.getElementById('chat-flow-container');
+    const chatInput = document.getElementById('chat-input');
+    const chatSendBtn = document.getElementById('chat-send-btn');
+
+    const statCount = document.getElementById('stat-count');
+    const statStars = document.getElementById('stat-stars');
+    const statMood = document.getElementById('stat-mood');
+    const momentsList = document.getElementById('moments-list');
+    const moodSelectorContainer = document.getElementById('mood-selector-container');
+    const starSelectorContainer = document.getElementById('star-selector-container');
+
+    const reframerInput = document.getElementById('reframer-input');
+    const reframerOutputPanel = document.getElementById('reframer-output-panel');
+    const syncButtonContainer = document.getElementById('sync-button-container');
+
+    // 初始化 Supabase（在所有 DOM 引用声明之后调用，避免 TDZ 错误）
+    initSupabase();
+
+    // ==================== 3. 功能交互渲染逻辑 ====================
+
+    // 全局消息弹出提示（替代 Alert）
+    function showNotification(msg, type = 'success') {
+      const toast = document.getElementById('toast');
+      const text = document.getElementById('toast-text');
+      const icon = document.getElementById('toast-icon');
+      const content = document.getElementById('toast-content');
+
+      text.innerText = msg;
+      if (type === 'success') {
+        icon.innerText = '✨';
+        content.className = "rounded-xl px-4 py-3 shadow-lg flex items-center gap-2 text-white text-sm font-semibold border bg-slate-900 border-slate-800";
+      } else if (type === 'error') {
+        icon.innerText = '⚠️';
+        content.className = "rounded-xl px-4 py-3 shadow-lg flex items-center gap-2 text-white text-sm font-semibold border bg-red-600 border-red-500";
+      } else {
+        icon.innerText = 'ℹ️';
+        content.className = "rounded-xl px-4 py-3 shadow-lg flex items-center gap-2 text-white text-sm font-semibold border bg-indigo-600 border-indigo-500";
+      }
+
+      toast.className = "fixed bottom-6 right-6 z-50 transform translate-y-0 opacity-100 transition-all duration-300";
+      setTimeout(() => {
+        toast.className = "fixed bottom-6 right-6 z-50 transform translate-y-10 opacity-0 pointer-events-none transition-all duration-300";
+      }, 3000);
+    }
+
+    // A. 推拉折叠侧边栏交互处理
+    function toggleSidebar(open) {
+      isSidebarOpen = open;
+      if (open) {
+        sidebar.className = "bg-white border-r border-slate-100 flex flex-col h-full z-20 absolute lg:relative transition-all duration-300 ease-in-out w-72 translate-x-0";
+        sidebarOverlay.classList.remove('hidden');
+        sidebarExpandFloat.classList.add('hidden');
+        // 恢复文字与尾部卡片
+        sidebarTitleText.classList.remove('lg:opacity-0');
+        sidebarFooterCard.classList.remove('hidden');
+        document.querySelectorAll('.tab-label').forEach(el => el.classList.remove('lg:hidden'));
+      } else {
+        sidebar.className = "bg-white border-r border-slate-100 flex flex-col h-full z-20 absolute lg:relative transition-all duration-300 ease-in-out w-0 -translate-x-full lg:w-16 lg:translate-x-0";
+        sidebarOverlay.classList.add('hidden');
+        if (window.innerWidth >= 1024) {
+          sidebarExpandFloat.classList.remove('hidden');
+        }
+        // 隐藏文字与尾部卡片
+        sidebarTitleText.classList.add('lg:opacity-0');
+        sidebarFooterCard.classList.add('hidden');
+        document.querySelectorAll('.tab-label').forEach(el => el.classList.add('lg:hidden'));
+      }
+    }
+
+    sidebarToggleBtn.addEventListener('click', () => {
+      toggleSidebar(!isSidebarOpen);
+    });
+
+    // 监听窗口尺寸变化
+    window.addEventListener('resize', () => {
+      if (window.innerWidth >= 1024) {
+        sidebarOverlay.classList.add('hidden');
+        toggleSidebar(isSidebarOpen);
+      } else {
+        sidebarExpandFloat.classList.add('hidden');
+      }
+    });
+
+    // B. Tab 导航切换
+    function switchTab(tabId) {
+      activeTab = tabId;
+
+      // 1. 隐藏所有面板
+      document.getElementById('tab-ai-chat').classList.add('hidden');
+      document.getElementById('tab-happy-moments').classList.add('hidden');
+      document.getElementById('tab-perspective-converter').classList.add('hidden');
+
+      // 2. 显示目标面板
+      if (tabId === 'ai-chat') {
+        document.getElementById('tab-ai-chat').classList.remove('hidden');
+      } else if (tabId === 'happy-moments') {
+        document.getElementById('tab-happy-moments').classList.remove('hidden');
+        renderHappyMoments();
+      } else if (tabId === 'perspective-converter') {
+        document.getElementById('tab-perspective-converter').classList.remove('hidden');
+        renderReframer();
+      }
+
+      // 3. 更新导航栏高亮
+      const tabs = [
+        { id: 'ai-chat', btnId: 'btn-tab-ai', activeClass: 'bg-rose-500 text-white font-medium shadow-md shadow-rose-200' },
+        { id: 'happy-moments', btnId: 'btn-tab-moments', activeClass: 'bg-amber-500 text-white font-medium shadow-md shadow-amber-200' },
+        { id: 'perspective-converter', btnId: 'btn-tab-converter', activeClass: 'bg-indigo-600 text-white font-medium shadow-md shadow-indigo-200' }
+      ];
+
+      tabs.forEach(tab => {
+        const btn = document.getElementById(tab.btnId);
+        const iconContainer = btn.querySelector('div');
+        if (tab.id === tabId) {
+          btn.className = `w-full flex items-center gap-3 p-3.5 rounded-xl transition-all duration-200 group text-left ${tab.activeClass}`;
+          iconContainer.className = "p-1.5 rounded-lg shrink-0 transition-colors bg-white/30";
+        } else {
+          btn.className = "w-full flex items-center gap-3 p-3.5 rounded-xl transition-all duration-200 group text-left text-slate-600 hover:bg-slate-50 hover:text-slate-900";
+          if (tab.id === 'ai-chat') iconContainer.className = "p-1.5 rounded-lg shrink-0 transition-colors bg-rose-50 text-rose-500 group-hover:bg-rose-100";
+          if (tab.id === 'happy-moments') iconContainer.className = "p-1.5 rounded-lg shrink-0 transition-colors bg-amber-50 text-amber-500 group-hover:bg-amber-100";
+          if (tab.id === 'perspective-converter') iconContainer.className = "p-1.5 rounded-lg shrink-0 transition-colors bg-indigo-50 text-indigo-500 group-hover:bg-indigo-100";
+        }
+      });
+
+      // 移动端选择后自动折叠
+      if (window.innerWidth < 1024) {
+        toggleSidebar(false);
+      }
+    }
+
+    // ==================== 4. TAB 1：和 AI 对话逻辑 ====================
+    
+    // 输入框回车机制
+    chatInput.addEventListener('input', () => {
+      const active = chatInput.value.trim().length > 0;
+      chatSendBtn.disabled = !active;
+      if (active) {
+        chatSendBtn.className = "bg-rose-500 text-white p-2.5 rounded-xl transition-all flex items-center justify-center shrink-0 shadow-md shadow-rose-200 cursor-pointer";
+      } else {
+        chatSendBtn.className = "bg-slate-200 text-slate-400 p-2.5 rounded-xl transition-all flex items-center justify-center shrink-0 cursor-not-allowed";
+      }
+    });
+
+    chatInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        handleSendChatMessage();
+      }
+    });
+
+    function formatTextMarkdown(text) {
+      return text.split('**').map((part, index) =>
+        index % 2 === 1 ? `<strong class="underline decoration-wavy decoration-amber-400">${part}</strong>` : part
+      ).join('');
+    }
+
+    const EDGE_FUNCTION_URL = (() => {
+      const cfg = window.APP_CONFIG || {};
+      const baseUrl = cfg.SUPABASE_URL || 'https://taiwltdisxbavfhohsfj.supabase.co';
+      return `${baseUrl}/functions/v1/deepseek-proxy`;
+    })();
+
+    async function callDeepSeekAPI(messages, retries = 2) {
+      const REQUEST_TIMEOUT_MS = 30000;
+
+      const isRetryable = (err) => {
+        if (err.name === 'AbortError') return true;
+        if (err.message.includes('Failed to fetch') || err.message.includes('NetworkError')) return true;
+        if (err.message.includes('HTTP 429') || err.message.includes('HTTP 5')) return true;
+        return false;
+      };
+
+      if (!sb) throw new Error('未连接到服务器，请刷新页面后重试。');
+      const { data: { session } } = await sb.auth.getSession();
+      if (!session) throw new Error('登录已过期，请重新登录。');
+
+      let lastError;
+      for (let attempt = 0; attempt <= retries; attempt++) {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+        try {
+          const response = await fetch(EDGE_FUNCTION_URL, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${session.access_token}`
+            },
+            body: JSON.stringify({ messages }),
+            signal: controller.signal
+          });
+
+          clearTimeout(timeoutId);
+          const data = await response.json();
+
+          if (!response.ok || data.error) {
+            throw new Error(data.error || `请求失败 (HTTP ${response.status})`);
+          }
+
+          return data.content;
+        } catch (err) {
+          clearTimeout(timeoutId);
+          lastError = err;
+          if (attempt < retries && isRetryable(err)) {
+            await new Promise(r => setTimeout(r, 1000 * Math.pow(2, attempt)));
+            continue;
+          }
+          throw err;
+        }
+      }
+      throw lastError;
+    }
+
+    function buildApiMessages() {
+      const apiMessages = [
+        { role: 'system', content: buildSystemPrompt() }
+      ];
+
+      const recentHistory = chatMessages.slice(-20);
+      for (const msg of recentHistory) {
+        if (msg.sender === 'user') {
+          apiMessages.push({ role: 'user', content: msg.text });
+        } else if (msg.sender === 'ai') {
+          apiMessages.push({ role: 'assistant', content: msg.text });
+        }
+      }
+
+      return apiMessages;
+    }
+
+    function renderChatFlow() {
+      chatFlowContainer.innerHTML = chatMessages.map(msg => {
+        const isUser = msg.sender === 'user';
+        return `
+          <div class="flex ${isUser ? 'justify-end' : 'justify-start'} animate-fade-in">
+            <div class="flex gap-3 max-w-[85%] md:max-w-[70%] ${isUser ? 'flex-row-reverse' : 'flex-row'}">
+              <!-- 头像 -->
+              <div class="w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${isUser ? 'bg-rose-500 text-white text-xs font-semibold' : 'bg-gradient-to-tr from-rose-400 to-indigo-500 text-white text-base'}">
+                ${isUser ? '我' : '🌱'}
+              </div>
+              
+              <!-- 气泡内容 -->
+              <div class="space-y-1">
+                <div class="rounded-2xl px-4 py-3 text-sm leading-relaxed shadow-sm ${
+                  isUser 
+                    ? 'bg-rose-500 text-white rounded-tr-none' 
+                    : 'bg-slate-100 text-slate-800 rounded-tl-none'
+                }">
+                  ${formatTextMarkdown(msg.text)}
+                </div>
+                <span class="text-[10px] block px-1 text-slate-400 ${isUser ? 'text-right' : 'text-left'}">
+                  ${msg.time}
+                </span>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+      
+      // 自动滚到最底部
+      chatFlowContainer.scrollTop = chatFlowContainer.scrollHeight;
+    }
+
+    async function handleSendChatMessage(textToSend = null) {
+      const text = textToSend || chatInput.value;
+      if (!text.trim()) return;
+
+      const timeNow = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      chatMessages.push({
+        id: Date.now(),
+        sender: 'user',
+        text: text,
+        time: timeNow
+      });
+
+      if (!textToSend) {
+        chatInput.value = '';
+        chatSendBtn.disabled = true;
+        chatSendBtn.className = "bg-slate-200 text-slate-400 p-2.5 rounded-xl transition-all flex items-center justify-center shrink-0 cursor-not-allowed";
+      }
+
+      renderChatFlow();
+      appendAiTypingIndicator();
+
+      try {
+        const apiMessages = buildApiMessages();
+        const reply = await callDeepSeekAPI(apiMessages);
+        removeAiTypingIndicator();
+        chatMessages.push({
+          id: Date.now() + 1,
+          sender: 'ai',
+          text: reply,
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        });
+        renderChatFlow();
+      } catch (error) {
+        removeAiTypingIndicator();
+        chatMessages.push({
+          id: Date.now() + 1,
+          sender: 'ai',
+          text: '抱歉，我暂时无法回应你。请检查网络连接或稍后再试。🫂',
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        });
+        renderChatFlow();
+        showNotification(error.message || 'AI 服务暂时不可用，请稍后重试', 'error');
+      }
+    }
+
+    function appendAiTypingIndicator() {
+      const div = document.createElement('div');
+      div.id = 'ai-typing-indicator';
+      div.className = "flex justify-start";
+      div.innerHTML = `
+        <div class="flex gap-3 max-w-[70%] flex-row">
+          <div class="w-8 h-8 rounded-full bg-gradient-to-tr from-rose-400 to-indigo-500 text-white flex items-center justify-center text-base shrink-0">🌱</div>
+          <div class="bg-slate-100 rounded-2xl rounded-tl-none px-4 py-3 flex items-center gap-1.5 shadow-sm">
+            <span class="w-2 h-2 rounded-full bg-rose-400 animate-bounce" style="animation-delay: 0ms"></span>
+            <span class="w-2 h-2 rounded-full bg-rose-400 animate-bounce" style="animation-delay: 150ms"></span>
+            <span class="w-2 h-2 rounded-full bg-rose-400 animate-bounce" style="animation-delay: 300ms"></span>
+          </div>
+        </div>
+      `;
+      chatFlowContainer.appendChild(div);
+      chatFlowContainer.scrollTop = chatFlowContainer.scrollHeight;
+    }
+
+    function removeAiTypingIndicator() {
+      const indicator = document.getElementById('ai-typing-indicator');
+      if (indicator) indicator.remove();
+    }
+
+    function sendPresetMessage(text) {
+      handleSendChatMessage(text);
+    }
+
+    // ==================== 5. TAB 2：记录幸福小事逻辑 ====================
+    
+    // 渲染幸福指数打星
+    function renderStarSelector() {
+      starSelectorContainer.innerHTML = [1, 2, 3, 4, 5].map(star => {
+        return `
+          <button
+            type="button"
+            onclick="setFormStar(${star})"
+            class="text-lg transition-transform active:scale-125 focus:outline-none"
+          >
+            ${star <= currentStarSelection ? '⭐' : '☆'}
+          </button>
+        `;
+      }).join('');
+    }
+
+    function setFormStar(star) {
+      currentStarSelection = star;
+      renderStarSelector();
+    }
+
+    // 渲染情绪快速选择器
+    function renderMoodSelector() {
+      const moods = ["🥰 满足", "☀️ 快乐", "🍕 享受", "🌿 平静", "💪 有力量"];
+      moodSelectorContainer.innerHTML = moods.map(mood => {
+        const isActive = currentMoodSelection === mood;
+        return `
+          <button
+            type="button"
+            onclick="setFormMood('${mood}')"
+            class="text-xs py-2 rounded-xl border transition-all ${
+              isActive 
+                ? 'bg-amber-50 border-amber-400 text-amber-700 font-semibold' 
+                : 'border-slate-100 hover:bg-slate-50 text-slate-500'
+            }"
+          >
+            ${mood}
+          </button>
+        `;
+      }).join('');
+    }
+
+    function setFormMood(mood) {
+      currentMoodSelection = mood;
+      renderMoodSelector();
+    }
+
+    async function loadMoments() {
+      if (!sb || !currentUser) return;
+      const { data, error } = await sb
+        .from('happy_moments')
+        .select('*')
+        .eq('user_id', currentUser.id)
+        .order('date', { ascending: false });
+      if (!error && data) {
+        moments = data;
+      }
+    }
+
+    // 记录幸福小事表单提交
+    async function handleFormSubmit(e) {
+      e.preventDefault();
+      const textInput = document.getElementById('moment-text');
+      const categorySelect = document.getElementById('moment-category');
+
+      if (!textInput.value.trim()) {
+        showNotification("幸福小事的内容不能为空哦~", "error");
+        return;
+      }
+
+      if (!sb || !currentUser) {
+        // 离线模式：回退到内存存储
+        moments.unshift({
+          id: Date.now(),
+          text: textInput.value,
+          mood: currentMoodSelection,
+          stars: currentStarSelection,
+          category: categorySelect.value,
+          date: new Date().toISOString().replace('T', ' ').substring(0, 16),
+          liked: false
+        });
+      } else {
+        const { data, error } = await sb
+          .from('happy_moments')
+          .insert([{
+            user_id: currentUser.id,
+            text: textInput.value,
+            mood: currentMoodSelection,
+            stars: currentStarSelection,
+            category: categorySelect.value,
+            liked: false
+          }])
+          .select();
+        if (!error && data) {
+          moments.unshift(data[0]);
+        } else if (error) {
+          showNotification('保存失败: ' + error.message, 'error');
+        }
+      }
+
+      textInput.value = '';
+      currentMoodSelection = "🥰 满足";
+      currentStarSelection = 5;
+      categorySelect.selectedIndex = 0;
+
+      renderHappyMoments();
+      showNotification("成功记录一件幸福小事，幸福感+1！🌸", "success");
+    }
+
+    async function toggleLikeMoment(id) {
+      const target = moments.find(m => m.id === id);
+      if (!target) return;
+      const newLiked = !target.liked;
+
+      if (sb && currentUser) {
+        await sb
+          .from('happy_moments')
+          .update({ liked: newLiked })
+          .eq('id', id)
+          .eq('user_id', currentUser.id);
+      }
+
+      moments = moments.map(m => m.id === id ? { ...m, liked: newLiked } : m);
+      renderHappyMoments();
+      showNotification("操作成功！⭐", "success");
+    }
+
+    async function deleteMoment(id) {
+      if (sb && currentUser) {
+        await sb
+          .from('happy_moments')
+          .delete()
+          .eq('id', id)
+          .eq('user_id', currentUser.id);
+      }
+
+      moments = moments.filter(m => m.id !== id);
+      renderHappyMoments();
+      showNotification("已移除该条记录", "info");
+    }
+
+    function exportMomentsText() {
+      if (moments.length === 0) {
+        showNotification('暂无幸福记录可导出', 'info');
+        return;
+      }
+
+      const lines = [];
+      lines.push('🌱 心芽小栈 · 幸福时光手账');
+      lines.push(`导出时间：${new Date().toLocaleString()}`);
+      lines.push('━'.repeat(40));
+      lines.push('');
+
+      const sorted = [...moments].sort((a, b) => {
+        const da = a.date || a.created_at || '';
+        const db = b.date || b.created_at || '';
+        return da.localeCompare(db);
+      });
+
+      const starsEmoji = (n) => '⭐'.repeat(n || 0);
+
+      for (const m of sorted) {
+        const d = m.date || (m.created_at ? m.created_at.substring(0, 10) : '未知日期');
+        lines.push(`📅 ${d}`);
+        lines.push(`   ${m.mood || ''}  ${starsEmoji(m.stars)}  ${m.category || ''}`);
+        lines.push(`   ${m.text}`);
+        if (m.liked) lines.push('   ❤️ 已收藏');
+        lines.push('');
+      }
+
+      lines.push('━'.repeat(40));
+      lines.push(`共计 ${moments.length} 件幸福小事 🌸`);
+
+      const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' });
+      downloadBlob(blob, `心芽小栈-幸福手账-${new Date().toISOString().substring(0, 10)}.txt`);
+      showNotification('文字手账导出成功！📥', 'success');
+    }
+
+    function exportMomentsJson() {
+      if (moments.length === 0) {
+        showNotification('暂无幸福记录可导出', 'info');
+        return;
+      }
+
+      const exportData = {
+        exportedAt: new Date().toISOString(),
+        app: '心芽小栈',
+        count: moments.length,
+        moments: moments.map(m => ({
+          text: m.text,
+          mood: m.mood,
+          stars: m.stars,
+          category: m.category,
+          date: m.date,
+          liked: m.liked,
+          created_at: m.created_at
+        }))
+      };
+
+      const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json;charset=utf-8' });
+      downloadBlob(blob, `心芽小栈-数据备份-${new Date().toISOString().substring(0, 10)}.json`);
+      showNotification('JSON 数据备份成功！💾', 'success');
+    }
+
+    function downloadBlob(blob, filename) {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+
+    // 渲染列表 & 指标看板
+    function renderHappyMoments() {
+      // 1. 渲染表单交互
+      renderStarSelector();
+      renderMoodSelector();
+
+      // 2. 统计指标计算
+      const totalCount = moments.length;
+      const averageRating = (moments.reduce((acc, curr) => acc + curr.stars, 0) / (totalCount || 1)).toFixed(1);
+      
+      // 计算高频心情
+      const moodCounts = moments.reduce((acc, curr) => {
+        acc[curr.mood] = (acc[curr.mood] || 0) + 1;
+        return acc;
+      }, {});
+      const topMood = Object.keys(moodCounts).reduce((a, b) => moodCounts[a] > moodCounts[b] ? a : b, "🥰 满足");
+
+      statCount.innerText = totalCount;
+      statStars.innerText = averageRating;
+      statMood.innerText = topMood;
+
+      // 3. 历史时间轴河流
+      if (moments.length === 0) {
+        momentsList.innerHTML = `
+          <div class="bg-white rounded-2xl border border-dashed border-slate-200 p-12 text-center">
+            <span class="text-4xl block mb-3">🍃</span>
+            <h4 class="font-bold text-slate-700 text-sm">暂时没有幸福记录呢</h4>
+            <p class="text-xs text-slate-400 mt-1 max-w-xs mx-auto">即使是非常微不足道的温暖细节，也值得我们用心写下哦！</p>
+          </div>
+        `;
+      } else {
+        momentsList.innerHTML = moments.map(m => {
+          return `
+            <div class="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm hover:shadow-md transition-all group relative overflow-hidden">
+              <div class="flex items-center justify-between text-xs text-slate-400 mb-2">
+                <div class="flex items-center gap-2">
+                  <span class="px-2 py-0.5 bg-slate-100 text-slate-600 rounded-md font-medium text-[10px]">${m.category}</span>
+                  <span>•</span>
+                  <span>${m.date}</span>
+                </div>
+                <div class="flex items-center gap-1">
+                  ${Array.from({ length: 5 }).map((_, i) => `
+                    <span class="text-[10px] ${i < m.stars ? 'text-amber-400' : 'text-slate-200'}">★</span>
+                  `).join('')}
+                </div>
+              </div>
+
+              <p class="text-slate-700 text-sm leading-relaxed whitespace-pre-wrap">${m.text}</p>
+
+              <div class="flex items-center justify-between border-t border-slate-50 mt-4 pt-3">
+                <span class="text-xs bg-amber-50 text-amber-700 px-2 py-1 rounded-full font-semibold">
+                  心情值: ${m.mood}
+                </span>
+                
+                <div class="flex items-center gap-1 opacity-80 group-hover:opacity-100 transition">
+                  <!-- 收藏 -->
+                  <button 
+                    onclick="toggleLikeMoment(${m.id})"
+                    class="p-1.5 rounded-lg transition ${m.liked ? 'text-rose-500 hover:bg-rose-50' : 'text-slate-400 hover:bg-slate-50'}"
+                    title="${m.liked ? '取消喜欢' : '喜欢这个小事'}"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="${m.liked ? 'currentColor' : 'none'}" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                    </svg>
+                  </button>
+
+                  <!-- 删除 -->
+                  <button 
+                    onclick="deleteMoment(${m.id})"
+                    class="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition"
+                    title="删除此条幸福"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+          `;
+        }).join('');
+      }
+    }
+
+    // ==================== 6. TAB 3：视角转换器逻辑 (AI 驱动) ====================
+
+    function renderReframer() {
+      if (reframerOutputText) {
+        reframerOutputPanel.innerHTML = `
+          <div class="space-y-4 animate-fade-in">
+            <div class="flex items-start gap-3">
+              <div class="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-500 to-rose-400 text-white flex items-center justify-center shrink-0 text-base shadow-sm animate-bounce">🌱</div>
+              <div class="bg-slate-800/90 border border-slate-700 rounded-2xl p-4 sm:p-5 text-slate-100 max-w-[92%] shadow-inner leading-relaxed">
+                <p class="text-sm font-medium whitespace-pre-wrap italic">
+                  "${reframerOutputText}"
+                </p>
+              </div>
+            </div>
+          </div>
+        `;
+        syncButtonContainer.classList.remove('hidden');
+      } else {
+        reframerOutputPanel.innerHTML = `
+          <div class="flex-1 flex flex-col items-center justify-center text-center py-8 text-slate-500 animate-fade-in">
+            <span class="text-3xl mb-3 animate-pulse">🔮</span>
+            <p class="text-xs leading-relaxed max-w-xs text-slate-400">
+              "用宏大的世界稀释痛苦，以微小的事物感知幸福。"<br><br>
+              在左侧写下困扰或平淡的日常并一键重构，这里将为您呈现温暖的心灵重构感悟。
+            </p>
+          </div>
+        `;
+        syncButtonContainer.classList.add('hidden');
+      }
+    }
+
+    function applyReframerDemo(text) {
+      reframerInput.value = text;
+    }
+
+    async function handleReframe() {
+      const input = reframerInput.value;
+      if (!input.trim()) {
+        showNotification("请先描述你遇到的烦恼事、或平淡枯燥的日常吧！", "error");
+        return;
+      }
+
+      const triggerBtn = document.getElementById('btn-trigger-reframe');
+      triggerBtn.disabled = true;
+      triggerBtn.className = "w-full bg-indigo-500 opacity-80 text-white font-bold text-sm py-3.5 rounded-xl transition-all flex items-center justify-center gap-2 cursor-wait";
+      triggerBtn.innerHTML = `
+        <svg class="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+        </svg>
+        <span>积极心理重构中...</span>
+      `;
+
+      try {
+        const messages = [
+          { role: 'system', content: REFRAMER_PROMPT },
+          { role: 'user', content: input }
+        ];
+        reframerOutputText = await callDeepSeekAPI(messages);
+      } catch (error) {
+        reframerOutputText = '抱歉，视角重构服务暂时不可用。请稍后重试。🫂';
+        showNotification('AI 重构失败: ' + error.message, 'error');
+      }
+
+      triggerBtn.disabled = false;
+      triggerBtn.className = "w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm py-3.5 rounded-xl transition-all flex items-center justify-center gap-2 shadow-md shadow-indigo-100 hover:shadow-lg";
+      triggerBtn.innerHTML = `<span>🔮 释放正念，一键重构！</span>`;
+
+      renderReframer();
+      showNotification("重塑完成！已切换至温煦向光视角 ☀️", "success");
+    }
+
+    // 视角转换一键同步到幸福手账
+    async function syncReframingToHappyMoments() {
+      if (!reframerOutputText) return;
+
+      const syncData = {
+        text: `【积极心理学·认知重构感悟】\n原本困扰：${reframerInput.value}\n\n💡 心灵重塑：${reframerOutputText}`,
+        mood: "🌈 释怀",
+        stars: 5,
+        category: "🔄 视角重构",
+        liked: true
+      };
+
+      if (sb && currentUser) {
+        const { data, error } = await sb
+          .from('happy_moments')
+          .insert([{ ...syncData, user_id: currentUser.id }])
+          .select();
+        if (!error && data) {
+          moments.unshift(data[0]);
+        } else if (error) {
+          showNotification('同步失败: ' + error.message, 'error');
+          return;
+        }
+      } else {
+        moments.unshift({ id: Date.now(), ...syncData, date: new Date().toISOString().replace('T', ' ').substring(0, 16) });
+      }
+
+      showNotification("已成功存入您的【幸福小事】心情手账！📖", "success");
+    }
+
+    // ==================== 7. 引导自启动执行 ====================
+    // Supabase 初始化由 window load 事件触发（见 initSupabase）
+    // 侧边栏等 UI 初始化在 showAppContent 后的渲染流程中触发
+  </script>
+</body>
+</html>
